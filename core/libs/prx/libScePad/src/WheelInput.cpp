@@ -14,6 +14,7 @@ namespace {
 constexpr std::uint16_t VendorLogitech = 0x046D;
 constexpr std::uint16_t VendorFanatec = 0x0EB7;
 constexpr std::uint16_t VendorMoza = 0x346E;
+constexpr std::uint16_t VendorThrustmaster = 0x044F;
 
 // Logitech wheels in PlayStation mode (G29, G923 PS, G27, G25, Driving Force GT, G PRO PS).
 constexpr std::array LogitechPlayStationWheels{
@@ -30,6 +31,13 @@ bool contains(const std::array<std::uint16_t, N>& list, std::uint16_t value) {
 
 bool isLogitechWheel(std::uint16_t vendor, std::uint16_t product) {
     return vendor == VendorLogitech && (contains(LogitechPlayStationWheels, product) || contains(LogitechXboxWheels, product));
+}
+
+// Thrustmaster makes wheels (T150, T248, T300, TX, TS-XW, T-GT, T818...) and also gamepads,
+// flight sticks and throttles: any of its devices that SDL does not take for one of those counts.
+bool isThrustmasterWheel(std::uint16_t vendor, SDL_JoystickType type) {
+    return vendor == VendorThrustmaster && type != SDL_JOYSTICK_TYPE_GAMECONTROLLER && type != SDL_JOYSTICK_TYPE_FLIGHT_STICK &&
+           type != SDL_JOYSTICK_TYPE_THROTTLE && type != SDL_JOYSTICK_TYPE_ARCADE_STICK;
 }
 
 std::string lower(std::string value) {
@@ -88,7 +96,8 @@ bool WheelInput::IsWheel(int deviceIndex) {
     if (SDL_JoystickGetDeviceType(deviceIndex) == SDL_JOYSTICK_TYPE_WHEEL) return true;
     const std::uint16_t vendor = SDL_JoystickGetDeviceVendor(deviceIndex);
     const std::uint16_t product = SDL_JoystickGetDeviceProduct(deviceIndex);
-    return vendor == VendorMoza || vendor == VendorFanatec || isLogitechWheel(vendor, product);
+    return vendor == VendorMoza || vendor == VendorFanatec || isLogitechWheel(vendor, product) ||
+           isThrustmasterWheel(vendor, SDL_JoystickGetDeviceType(deviceIndex));
 }
 
 void WheelInput::open(int deviceIndex) {

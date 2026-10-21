@@ -33,6 +33,11 @@ bool IsWheel(int index) {
     const Uint16 vendor = SDL_JoystickGetDeviceVendor(index);
     const Uint16 product = SDL_JoystickGetDeviceProduct(index);
     if (vendor == 0x346E || vendor == 0x0EB7) return true;
+    if (vendor == 0x044F) { // Thrustmaster, but not its gamepads, flight sticks and throttles
+        const SDL_JoystickType type = SDL_JoystickGetDeviceType(index);
+        if (type != SDL_JOYSTICK_TYPE_GAMECONTROLLER && type != SDL_JOYSTICK_TYPE_FLIGHT_STICK &&
+            type != SDL_JOYSTICK_TYPE_THROTTLE && type != SDL_JOYSTICK_TYPE_ARCADE_STICK) return true;
+    }
     constexpr std::array<Uint16, 11> logitech{0xC24F, 0xC266, 0xC29B, 0xC299, 0xC29A, 0xC294, 0xC298, 0xC268, 0xC262, 0xC26E, 0xC272};
     return vendor == 0x046D && std::find(logitech.begin(), logitech.end(), product) != logitech.end();
 }

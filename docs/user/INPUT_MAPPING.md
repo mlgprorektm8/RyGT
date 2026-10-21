@@ -34,7 +34,7 @@ An invalid line reports the file and line number and stops input initialization.
 
 ## Racing wheels and pedals
 
-Racing wheels (Logitech G25/G27/G29/G920/G923/G PRO, Moza, Fanatec and any device SDL reports as a wheel) and other joysticks that SDL does not map as game controllers are read by libScePad on their own thread, whichever window or renderer is in use.
+Racing wheels (Logitech G25/G27/G29/G920/G923/G PRO, Moza, Fanatec, Thrustmaster (T150, T248, T300, TX, TS-XW, T-GT, T818 and the like; not its gamepads or flight sticks) and any device SDL reports as a wheel) and other joysticks that SDL does not map as game controllers are read by libScePad on their own thread, whichever window or renderer is in use.
 
 The wheel is reported to the game as a native steering wheel: `scePadOpenExt` opens it, `scePadReadExt`/`scePadReadStateExt` read it, and `scePadDeviceClassParseData` reports its position, throttle, brake and clutch through the steering-wheel device class. By default it presents itself as a Fanatec direct-drive base (`0eb7:0e05`), which GT Sport drives through its Fanatec SDK; it can present itself as a Logitech G29 (`046d:c24f`) instead, which GT Sport drives through its `logiWheel.prx`. The wheel's mapped buttons also reach player 1's ordinary pad, so menus can be used with it.
 
