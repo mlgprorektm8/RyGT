@@ -64,3 +64,8 @@ log level include the renderer's Info lines (frame-time windows). 0049 (FIX-165)
 pipeline cache file (`RYGT_DRIVER_CACHE=1` turns it back on, saved only at exit): at 3.7 GB, its
 saves every 30 s made native races drop to 10 fps and back. 0050 (DIAG-166) attaches RenderDoc when its
 layer is on: F12 or a `capture.now` file in the RyGT folder captures a frame into `captures`.
+Patch 0051 (GTS-009) fills screens wider (or narrower) than 16:9: `GPU.aspect_ratio` ("auto", the
+launcher's Display > Screen shape > "Fill the screen", is the shape of the game's window or screen;
+also "21:9", "32:9", width:height or a number; `RYGT_ASPECT` overrides it) widens the race camera's
+16:9 aspect (eboot 0x5e717f) and stretches the picture over the whole window instead of black
+bars. The HUD and menus are stretched with the picture; 16:9, the default, changes nothing.

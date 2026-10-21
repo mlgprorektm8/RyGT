@@ -1,0 +1,189 @@
+From b11978f4211aef155d6fdc0835338d849c6d23e8 Mon Sep 17 00:00:00 2001
+From: Wackyhcky <dessierror@gmail.com>
+Date: Wed, 21 Oct 2026 14:17:06 +1100
+Subject: [PATCH] ryGT: fill ultrawide screens (GTS-009)
+
+GPU.aspect_ratio ("auto": the shape of the game's window or screen;
+"21:9", "32:9", width:height or a number; RYGT_ASPECT overrides it)
+widens the race camera's 16:9 aspect (eboot 0x5e717f, mov dword
+[rbx+0x8d464], 1.7777778f) and stretches the game's picture over the
+whole window instead of showing it between black bars. The splash
+screen keeps its shape; the HUD and menus are stretched with the
+picture. 16:9 (the default) leaves everything as it was.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ryty_gpu/ryty_game_patch.cpp                  | 91 +++++++++++++++++++
+ .../renderer_vulkan/vk_presenter.cpp          | 25 ++++-
+ 2 files changed, 115 insertions(+), 1 deletion(-)
+
+diff --git a/ryty_gpu/ryty_game_patch.cpp b/ryty_gpu/ryty_game_patch.cpp
+index ee375a1..86fb44b 100644
+--- a/ryty_gpu/ryty_game_patch.cpp
++++ b/ryty_gpu/ryty_game_patch.cpp
+@@ -10,6 +10,7 @@
+ 
+ #include <cstdio>
+ #include <algorithm>
++#include <cmath>
+ #include <atomic>
+ #include <chrono>
+ #include <cstdlib>
+@@ -1000,6 +1001,95 @@ bool ConfigFlag(const char* key, bool fallback) {
+     return text.compare(value, 4, "true") == 0;
+ }
+ 
++// A setting of the GT Sport config as written (a string without its quotes, a number), or "".
++static std::string ConfigValue(const char* key) {
++    char path[MAX_PATH];
++    const DWORD length = GetModuleFileNameA(nullptr, path, MAX_PATH);
++    if (length == 0 || length >= MAX_PATH) {
++        return {};
++    }
++    std::string config{path, length};
++    config = config.substr(0, config.find_last_of("\\/") + 1) + "user\\custom_configs\\CUSA03220.json";
++    std::FILE* file = std::fopen(config.c_str(), "rb");
++    if (!file) {
++        return {};
++    }
++    std::string text;
++    char chunk[4096];
++    while (const size_t n = std::fread(chunk, 1, sizeof(chunk), file)) {
++        text.append(chunk, n);
++    }
++    std::fclose(file);
++    const std::string quoted = std::string{"\""} + key + "\"";
++    const size_t at = text.find(quoted);
++    if (at == std::string::npos) {
++        return {};
++    }
++    const size_t value = text.find_first_not_of(" \t\r\n:", at + quoted.size());
++    if (value == std::string::npos) {
++        return {};
++    }
++    if (text[value] == '"') {
++        const size_t end = text.find('"', value + 1);
++        return end == std::string::npos ? std::string{} : text.substr(value + 1, end - value - 1);
++    }
++    const size_t end = text.find_first_of(",}\r\n", value);
++    return text.substr(value, end == std::string::npos ? std::string::npos : end - value);
++}
++
++// GTS-009: the camera's aspect ratio for a screen wider (or narrower) than 16:9, from
++// GPU.aspect_ratio: "auto" (the shape of the game's window or screen, from the display settings),
++// "21:9", "32:9", another width:height or a number. 0 when the game's own 16:9 applies.
++// RYGT_ASPECT overrides it.
++namespace Vulkan {
++float RytyDisplayAspect() {
++    static const float aspect = [] {
++        std::string value = ConfigValue("aspect_ratio");
++        if (const char* env = std::getenv("RYGT_ASPECT")) {
++            value = env;
++        }
++        double ratio = 0.0;
++        if (value == "auto") {
++            const bool full = ConfigValue("full_screen") == "true";
++            const bool exclusive = ConfigValue("full_screen_mode") == "Fullscreen";
++            double width = std::atof(ConfigValue("window_width").c_str());
++            double height = std::atof(ConfigValue("window_height").c_str());
++            if (full && !exclusive) { // borderless: the desktop's resolution
++                width = GetSystemMetrics(SM_CXSCREEN);
++                height = GetSystemMetrics(SM_CYSCREEN);
++            }
++            ratio = height > 0.0 ? width / height : 0.0;
++        } else if (const size_t colon = value.find(':'); colon != std::string::npos) {
++            const double height = std::atof(value.substr(colon + 1).c_str());
++            ratio = height > 0.0 ? std::atof(value.substr(0, colon).c_str()) / height : 0.0;
++        } else {
++            ratio = std::atof(value.c_str());
++        }
++        if (!(ratio > 0.5 && ratio < 6.0) || std::abs(ratio - 16.0 / 9.0) < 0.01) {
++            return 0.0f;
++        }
++        return static_cast<float>(ratio);
++    }();
++    return aspect;
++}
++} // namespace Vulkan
++
++// GTS-009: the race camera's view is set up with a 16:9 aspect
++// (eboot 0x5e717f: mov dword [rbx+0x8d464], 1.7777778f); the wider aspect widens its view.
++static void InstallWideCamera(u8* base) {
++    const float aspect = Vulkan::RytyDisplayAspect();
++    if (aspect <= 0.0f) {
++        return;
++    }
++    const float original = 16.0f / 9.0f;
++    std::vector<u8> from(4), to(4);
++    std::memcpy(from.data(), &original, 4);
++    std::memcpy(to.data(), &aspect, 4);
++    if (Apply(base, Patch{0x5f7185, from, to, fmt::format("GTS-009 camera aspect {:.3f}", aspect)})) {
++        std::fprintf(stderr, "[patch] GTS-009: picture stretched to the window\n");
++    }
++}
++
+ void InstallMirrorHalfRate(u8* base) {
+     bool wanted = ConfigFlag("mirror_half_rate", false);
+     if (const char* env = std::getenv("RYGT_MIRROR_HALF")) {
+@@ -1145,6 +1235,7 @@ void InstallFatalErrorDiag(u8* base) {
+ } // namespace
+ 
+ void RytyApplyGamePatches() {
++    InstallWideCamera(reinterpret_cast<u8*>(GetModuleHandleA(nullptr)));
+     InstallTriggerTelemetry(reinterpret_cast<u8*>(GetModuleHandleA(nullptr)));
+     InstallMirrorHalfRate(reinterpret_cast<u8*>(GetModuleHandleA(nullptr)));
+     if (!WetReflectionsWanted()) {
+diff --git a/src/video_core/renderer_vulkan/vk_presenter.cpp b/src/video_core/renderer_vulkan/vk_presenter.cpp
+index bbbd5be..57a2025 100644
+--- a/src/video_core/renderer_vulkan/vk_presenter.cpp
++++ b/src/video_core/renderer_vulkan/vk_presenter.cpp
+@@ -107,6 +107,21 @@ bool CanBlitToSwapchain(const vk::PhysicalDevice physical_device, vk::Format for
+     return MakeImageBlit(frame_width, frame_height, swapchain_width, swapchain_height, 0, 0);
+ }
+ 
++#ifdef RYTY_GPU
++float RytyDisplayAspect(); // ryty_game_patch.cpp (GTS-009)
++#endif
++
++// GTS-009: with a widened camera (GPU.aspect_ratio) the game's 16:9 picture is stretched over the
++// whole window instead of being shown between black bars.
++static bool StretchToWindow() {
++#ifdef RYTY_GPU
++    static const bool stretch = RytyDisplayAspect() > 0.0f;
++    return stretch;
++#else
++    return false;
++#endif
++}
++
+ static vk::Rect2D FitImage(s32 frame_width, s32 frame_height, s32 swapchain_width,
+                            s32 swapchain_height) {
+     float frame_aspect = static_cast<float>(frame_width) / frame_height;
+@@ -1324,8 +1339,13 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
+                 ImVec2 contentArea = ImGui::GetContentRegionAvail();
+                 SetExpectedGameSize((s32)contentArea.x, (s32)contentArea.y);
+ 
++                const bool stretch =
++                    StretchToWindow() && game_texture == frame->imgui_texture; // not the splash
+                 const auto imgRect =
+-                    FitImage(game_width, game_height, (s32)contentArea.x, (s32)contentArea.y);
++                    stretch ? vk::Rect2D{{0, 0}, {static_cast<u32>(contentArea.x),
++                                                  static_cast<u32>(contentArea.y)}}
++                            : FitImage(game_width, game_height, (s32)contentArea.x,
++                                       (s32)contentArea.y);
+                 ImVec2 offset{
+                     static_cast<float>(imgRect.offset.x),
+                     static_cast<float>(imgRect.offset.y),
+@@ -1527,6 +1547,9 @@ void Presenter::SetExpectedGameSize(s32 width, s32 height) {
+ 
+     expected_frame_height = height;
+     expected_frame_width = width;
++    if (StretchToWindow()) {
++        return; // GTS-009: the frame takes the window's shape; the passes scale to it
++    }
+     if (ratio > expected_ratio) {
+         expected_frame_width = static_cast<s32>(height * expected_ratio);
+     } else {
+-- 
+2.55.0.windows.5
+

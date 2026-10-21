@@ -314,7 +314,7 @@ namespace RyGT
             lock (gate)
             {
                 deviceList.Text = deviceOrder.Count == 0
-                    ? "No wheel or joystick found. Plug it in (and start its software, like Moza Pit House or G HUB)."
+                    ? "No wheel or joystick found. Plug it in (and start its software, like Moza Pit House, G HUB or the Thrustmaster drivers)."
                     : "Found: " + string.Join(", ", deviceOrder.Select(id => devices[id].Name + (devices[id].Wheel ? " (wheel)" : "")));
                 var lines = deviceOrder.Select(id =>
                 {

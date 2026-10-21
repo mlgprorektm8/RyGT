@@ -630,6 +630,7 @@ namespace RyGT
 
             var display = Section(left, "Display");
             AddScreenSettings(display);
+            AddShapeSetting(display);
             AddOption(display, "Show an FPS counter", "General", "show_fps_counter", false);
             AddOption(display, "Show the splash screen while the game starts", "General", "show_splash", false);
             AddOption(display, "Show the game on Discord (Rich Presence)", "General", "discord_rpc_enabled", true);
@@ -1234,6 +1235,27 @@ namespace RyGT
         // whole, then copied again when saved) is off and fewer freed GPU images are kept for
         // reuse. Tokyo rain race, committed memory: 32 GB setting ~11 GB average / 13.5 GB peak,
         // 16 GB setting ~8.6 / 9.0 GB. Picked from the installed RAM the first time.
+        // Screen shape (GPU.aspect_ratio, GTS-009 in renderer patch 0051): GT Sport draws a 16:9
+        // picture. "Fill the screen" widens the race camera to the shape of the game's window or
+        // screen and stretches the picture over it (ultrawide without black bars; the HUD and menus
+        // are stretched too). Read when the game starts.
+        void AddShapeSetting(TableLayoutPanel panel)
+        {
+            var row = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2), WrapContents = false };
+            var label = new Label { Text = "Screen shape", AutoSize = false, Width = 196, Height = 20, BackColor = Color.Transparent, Margin = new Padding(0, 6, 8, 0) };
+            var shape = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160, FlatStyle = FlatStyle.Flat };
+            shape.Items.AddRange(new object[] { "16:9 (the game's own)", "Fill the screen (wide)" });
+            shape.SelectedIndex = ReadStringSetting("GPU", "aspect_ratio", "16:9") == "auto" ? 1 : 0;
+            shape.SelectedIndexChanged += delegate
+            {
+                try { WriteSetting("GPU", "aspect_ratio", shape.SelectedIndex == 1 ? "auto" : "16:9"); }
+                catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
+            };
+            row.Controls.Add(label);
+            row.Controls.Add(shape);
+            panel.Controls.Add(row);
+        }
+
         void AddMemorySetting(TableLayoutPanel panel)
         {
             var row = new FlowLayoutPanel { AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 4, 0, 2), WrapContents = false };
